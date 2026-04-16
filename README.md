@@ -5,23 +5,28 @@ SDK and CLI Tools for working with the AWS HealthOmics Service.
 - [AWS HealthOmics Tools](#aws-healthomics-tools)
   - [Installation](#installation)
   - [SDK Tools](#sdk-tools)
-    - [Omics Transfer Manager](#omics-transfer-manager)
+    - [HealthOmics Transfer Manager](#healthomics-transfer-manager)
       - [Basic Usage](#basic-usage)
       - [Download specific files](#download-specific-files)
       - [Upload specific files](#upload-specific-files)
       - [Subscribe to events](#subscribe-to-events)
       - [Threads](#threads)
-    - [Omics URI Parser](#omics-uri-parser)
+    - [HealthOmics URI Parser](#healthomics-uri-parser)
       - [Readset file URI:](#readset-file-uri)
       - [Reference file URI:](#reference-file-uri)
   - [CLI Tools](#cli-tools)
-    - [Omics Rerun](#omics-rerun)
+    - [HealthOmics Rerun](#healthomics-rerun)
       - [List runs from manifest](#list-runs-from-manifest)
       - [Rerun a previously-executed run](#rerun-a-previously-executed-run)
-    - [Omics Run Analyzer](#omics-run-analyzer)
+    - [HealthOmics Run Analyzer](#healthomics-run-analyzer)
       - [List completed runs](#list-completed-runs)
       - [Analyze a specific workflow run](#analyze-a-specific-workflow-run)
+      - [Run optimization and estimated cost reduction](#run-optimization-and-estimated-cost-reduction)
+        - [Adding headroom to recommendations](#add-headroom-to-recommendations)
       - [Output workflow run manifest in JSON format](#output-workflow-run-manifest-in-json-format)
+      - [Output optimized configuration (for Nextflow)](#output-optimized-configuration)
+      - [Aggregate scattered tasks and multiple runs (batch mode)](#aggregate-scattered-tasks-and-multiple-runs-batch-mode)
+      
   - [Security](#security)
   - [License](#license)
 
@@ -29,19 +34,25 @@ SDK and CLI Tools for working with the AWS HealthOmics Service.
 AWS HealthOmics Tools is available through pypi. To install, type:
 
 ```bash
-pip install amazon-omics-tools
+pip install aws-healthomics-tools
 ```
 
-To install from source:
+### Install from source
+
+Installing from source requires that your machine has the following prerequisites installed: 
+- `python3.10` or above
+- `poetry` package manager
+- `make` build tool
 
 ```
-git clone https://github.com/awslabs/amazon-omics-tools.git
-pip install ./amazon-omics-tools
+git clone https://github.com/awslabs/aws-healthomics-tools.git
+cd ./aws-healthomics-tools
+make install
 ```
 
 ## SDK Tools
 
-### Omics Transfer Manager
+### HealthOmics Transfer Manager
 
 #### Basic Usage
 The `TransferManager` class makes it easy to download files from a AWS HealthOmics reference or read set.  By default the files are saved to the current directory, or you can specify a custom location with the `directory` parameter.
@@ -142,7 +153,7 @@ manager = TransferManager(client, config)
 manager.download_read_set(SEQUENCE_STORE_ID, "<my-read-set-id>")
 ```
 
-### Omics URI Parser
+### HealthOmics URI Parser
 
 The `OmicsUriParser` class makes it easy to parse AWS HealthOmics readset and reference URIs to extract fields relevant for calling 
 AWS HealthOmics APIs.
@@ -211,20 +222,20 @@ CLI tools are modules in this package that can be invoked from the command line 
 python -m omics.cli.<TOOL-NAME>
 ```
 
-### Omics Rerun
+### HealthOmics Rerun
 
-The `omics-rerun` tool makes it easy to start a new run execution from a CloudWatch Logs manifest.
+The `rerun` tool makes it easy to start a new run execution from a CloudWatch Logs manifest.
 
 For an overview of what it does and available options run:
 
 ```bash
-python -m omics.cli.rerun -h
+aws-healthomics-tools rerun -h
 ```
 
 #### List runs from manifest
 The following example lists all workflow run ids which were completed on July 1st (UTC time):
 ```bash
-python -m omics.cli.rerun -s 2023-07-01T00:00:00 -e 2023-07-02T00:00:00
+aws-healthomics-tools rerun -s 2023-07-01T00:00:00 -e 2023-07-02T00:00:00
 ```
 
 this returns something like:
@@ -238,7 +249,7 @@ this returns something like:
 To rerun a previously-executed run, specify the run id you would like to rerun:
 
 ```bash
-python -m omics.cli.rerun 1234567
+aws-healthomics-tools rerun 1234567
 ```
 
 this returns something like:
@@ -267,7 +278,7 @@ StartRun response:
 It is possible to override a request parameter from the original run. The following example tags the new run, which is particularly useful as tags are not propagated from the original run.
 
 ```bash
-python -m omics.cli.rerun 1234567 --tag=myKey=myValue
+aws-healthomics-tools rerun 1234567 --tag=myKey=myValue
 
 ```
 
@@ -300,7 +311,7 @@ StartRun response:
 
 Before submitting a rerun request, it is possible to dry-run to view the new StartRun request:
 ```bash
-python -m omics.cli.rerun -d 1234567
+aws-healthomics-tools rerun -d 1234567
 ```
 
 this returns something like:
@@ -318,19 +329,19 @@ StartRun request:
 }
 ```
 
-### Omics Run Analyzer
-The `omics-run-analyzer` tool retrieves a workflow run manifest from CloudWatchLogs and generates statistics for the run, including CPU and memory utilization for each workflow task.
+### HealthOmics Run Analyzer
+The `run_analyzer` tool retrieves a workflow run manifest from CloudWatchLogs and generates statistics for the run, including CPU and memory utilization for each workflow task.
 
 For an overview of what it does and available options run:
 
 ```bash
-python -m omics.cli.run_analyzer -h
+aws-healthomics-tools run_analyzer -h
 ```
 
 #### List completed runs
 The following example lists all workflow runs completed in the past 5 days:
 ```bash
-python -m omics.cli.run_analyzer -t5d
+aws-healthomics-tools run_analyzer -t5d
 ```
 
 this returns something like:
@@ -343,7 +354,13 @@ Workflow run IDs (<completionTime> <UUID>):
 
 #### Analyze a specific workflow run
 ```bash
-python -m omics.cli.run_analyzer 1234567 -o run-1234567.csv
+aws-healthomics-tools run_analyzer 1234567 -o run-1234567.csv
+```
+
+##### Providing a UUID
+If a run ID is ambiguous, you can provide a UUID along with the run ID in the following way:
+```bash
+aws-healthomics-tools run_analyzer 1234567:2eca9876-ac33-98cd-0298-11cc59c05273 -o run-1234567.csv
 ```
 
 this returns something like:
@@ -351,9 +368,10 @@ this returns something like:
 ```text
 omics-run-analyzer: wrote run-1234567.csv
 ```
-
+##### Output Columns
 The CSV output by the command above includes the following columns:
 
+* __uuid__ : Globally unique identifier to identify runs across accounts and regions
 * __arn__ : Unique workflow run or task identifier
 * __type__ : Resource type (_run_ or _task_)
 * __name__ : Workflow run or task name
@@ -393,6 +411,9 @@ For rows that are a _task_ type, the maximums, averages and reserved columns ref
 Based on the metrics observed and calculated for a run, the application will recommend the smallest instance type that could be used for each task in the run. The type is reported in the `omicsInstanceTypeMinimum` column. To obtain this type for a task you can set the task CPU and memory requested for the task to the values of `recommendedCpus` and  `recommendedMemoryGiB` in you workflow definition. Based on this change each task would be estimated to
 reduce the cost of the run by `estimatedUSD` minus `minimumUSD`. The total potential cost reduction for the entire run can be estimated by subtracting the `minimumUSD` value from the `estimatedUSD` value in the row where the `type` is "`run`".
 
+> [!WARNING]
+> Cost estimates are based on the AWS list price at the time the run analysis is performed. In the event prices have changed these may not reflect the price you were charged at the time of the run. Further, the run analyzer does not account for any discounts, credits or price agreements you may have. Price estimates for recommended instance sizes (`minimumUSD`) assume that the runtime of the task will remain the same on the recommended instance. Actual costs will be determined based on the actual runtime.
+
 #### Add headroom to recommendations
 
 Sometimes you will see variance in the amount of memory and CPU used in a run task, especially if you expect to run workflows with larger input files than were used in the analyzed run. For this reason you might want to allow add some headroom to the recommendations produced by the the run analyzer.
@@ -407,7 +428,7 @@ If your analyzed run is already close to optimal then adding headroom might resu
 The RunAnalyzer tool can produce an interative timeline plot of a workflow. The plots allow you to visualize how individual tasks ran over the course of the run.
 
 ```bash
-python -m omics.cli.run_analyzer -P plots/ 7113639
+aws-healthomics-tools run_analyzer -P plots/ 7113639
 ```
 
 ![Example time line image showing stacked horizontal bars indicating the time taken by each task](./assets/timeline.png)
@@ -415,13 +436,60 @@ python -m omics.cli.run_analyzer -P plots/ 7113639
 #### Output workflow run manifest in JSON format
 
 ```bash
-python -m omics.cli.run_analyzer 1234567 -s -o run-1234567.json
+aws-healthomics-tools run_analyzer 1234567 -s -o run-1234567.json
 ```
 
 this returns something like:
 ```text
 omics-run-analyzer: wrote run-1234567.json
 ```
+
+#### Output optimized configuration
+> [!WARNING]
+> Currently this feature only supports Nextflow workflows.
+
+The `--write-config` option will write a new configuration file with the `recommendedCpus` and `recommendedMemoryGiB` as the resource requirements. This will take the maximum values if the task is run multiple times with different inputs. 
+
+```bash
+aws-healthomics-tools run_analyzer 123456 --write-config=optimized.config
+```
+
+#### Aggregate scattered tasks and multiple runs (batch mode)
+
+> [!NOTE]
+> This feature is currently experimental and the output may change in future versions. We encourage feedback on which aggregations are useful and which are not. 
+
+The `--batch` option can be used with a single run to aggregate all scattered tasks into one summarized task report. Non scattered tasks are also aggregated but will have a count of 1.
+
+```bash
+aws-healthomics-tools run_analyzer 1234567 --batch
+```
+
+The option may also be used with multiple runs to aggregate all tasks including scattered tasks.
+
+```bash
+aws-healthomics-tools run_analyzer 1234567 2345678 3456789 --batch
+```
+
+These statics are reported in CSV format:
+
+- __"type"__: The type of row (currently always task),
+- __"name"__: The base name of the task with any scatter suffix removed
+- __"count"__: The number of times the named task has been observed in the runs
+- __"meanRunningSeconds"__: The average runtime in seconds for the named tasks
+- __"maximumRunningSeconds"__: The longest runtime in seconds for the named task
+- __"stdDevRunningSeconds"__: The standard deviation of runtimes for the named task
+- __"maximumCpuUtilizationRatio"__: The highest CPU utilization ratio seen for any of the named tasks
+- __"meanCpuUtilizationRation"__: The average CPU utilization ratio for the named task
+- __"maximumMemoryUtilizationRatio"__: The highest memory utilization ratio seen for any of the named tasks
+- __"meanMemoryUtilizationRation"__: The average memory utilization ratio for the named task
+- __"maximumGpusReserved"__: The largest number of GPUs reserved for the named tasks
+- __"meanGpusReserved"__: The average number of GPUs reserved for the named task
+- __"recommendedCpus"__: The recommended number of Cpus that would accommodate all observed instances of a task (including any headroom factor)
+- __"recommendedMemoryGiB"__: The recommended GiBs of memory that would accommodate all observed instances of a task (including and headroom factor)
+- __"recommendOmicsInstanceType"__: The recommended omics instance type that would accomodate all observed instances of a task
+- __"maximumEstimatedUSD"__: The largest estimated cost observed for the named task.
+- __"meanEstimatedUSD"__: The average estimated cost observed for the named task.
 
 ## Security
 
@@ -430,4 +498,3 @@ See [CONTRIBUTING](https://github.com/awslabs/amazon-omics-tools/blob/main/CONTR
 ## License
 
 This project is licensed under the Apache-2.0 License.
-

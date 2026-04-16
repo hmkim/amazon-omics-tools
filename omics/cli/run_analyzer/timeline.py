@@ -25,23 +25,25 @@ def _parse_time_str(time_str):
 def _get_task_timings_data(tasks, time_units="min"):
     time_scale_factor = TIME_SCALE_FACTORS[time_units]
 
-    # remove tasks that don't have a creationTime
-    filtered_tasks = [task for task in tasks if task.get("creationTime")]
+    # retain only tasks that have creationTime, stopTime and startTime
+    filtered_tasks = [
+        task
+        for task in tasks
+        if task.get("creationTime") and task.get("stopTime") and task.get("startTime")
+    ]
     if not filtered_tasks:
-        print("No tasks found with timing data, a plot cannot be created", file=sys.stderr)
+        print(
+            "No tasks found with timing data, possibly all tasks were cached, a plot cannot be created",
+            file=sys.stderr,
+        )
         return pd.DataFrame()
 
     tare = min([_parse_time_str(task["creationTime"]) for task in filtered_tasks])
 
-    for i, task in enumerate(tasks):
-        if "creationTime" not in task:
-            task["creationTime"] = tare
-            task["startTime"] = task["creationTime"]
-            task["stopTime"] = task["creationTime"]
-        else:
-            task["creationTime"] = _parse_time_str(task["creationTime"])
-            task["startTime"] = _parse_time_str(task["startTime"])
-            task["stopTime"] = _parse_time_str(task["stopTime"])
+    for i, task in enumerate(filtered_tasks):
+        task["creationTime"] = _parse_time_str(task["creationTime"])
+        task["startTime"] = _parse_time_str(task["startTime"])
+        task["stopTime"] = _parse_time_str(task["stopTime"])
         task["cpus"] = task.get("cpus", 0)
         task["gpus"] = task.get("gpus", 0)
         task["memory"] = task.get("memory", 0)
@@ -61,17 +63,18 @@ def _get_task_timings_data(tasks, time_units="min"):
         task["label"] = f"({task['arn']}) {task['name']}"
         task["text_x"] = (task["stopTime"] - tare).total_seconds() + 30 * time_scale_factor
 
-        tasks[i] = task
+        filtered_tasks[i] = task
         task["estimatedUSD"] = task.get("metrics", {}).get("estimatedUSD", 0.0)
 
-    return pd.DataFrame.from_records(tasks).sort_values("creationTime")
+    return pd.DataFrame.from_records(filtered_tasks).sort_values("creationTime")
 
 
 def plot_timeline(tasks, title="", time_units="min", max_duration_hrs=5, show_plot=True):
     """Plot a time line figure for supplied tasks"""
     time_scale_factor = TIME_SCALE_FACTORS[time_units]
     data = _get_task_timings_data(tasks, time_units=time_units)
-
+    if data.empty:
+        return None
     source = ColumnDataSource(data)
 
     tooltips = [
@@ -89,6 +92,7 @@ def plot_timeline(tasks, title="", time_units="min", max_duration_hrs=5, show_pl
 
     p_run = figure(width=960, height=800, sizing_mode="stretch_both", tooltips=tooltips)
     p_run.hbar(
+        # start time bar
         y="y",
         left="starting_left",
         right="starting_right",
@@ -98,6 +102,7 @@ def plot_timeline(tasks, title="", time_units="min", max_duration_hrs=5, show_pl
         legend_label="starting",
     )
     p_run.hbar(
+        # running time bar
         y="y",
         left="running_left",
         right="running_right",
@@ -106,9 +111,12 @@ def plot_timeline(tasks, title="", time_units="min", max_duration_hrs=5, show_pl
         source=source,
         legend_label="running",
     )
-    if len(data) < 50:
+    if len(data) < 101:
         p_run.text(
-            x="text_x",
+            # task name label
+            color="black",
+            x="running_right",
+            x_offset=10,
             y="y",
             text="name",
             alpha=0.4,
@@ -128,7 +136,7 @@ def plot_timeline(tasks, title="", time_units="min", max_duration_hrs=5, show_pl
     p_run.title.text = (
         f"{title}, "
         f"tasks: {len(tasks)}, "
-        f"wall time: {(_parse_time_str(max_stop_time) - _parse_time_str(min_creation_time)).total_seconds() * time_scale_factor:.2f} {time_units}"
+        f"wall time: {(_parse_time_str(max_stop_time) - _parse_time_str(min_creation_time)).total_seconds() * time_scale_factor:.2f} {time_units}"  # noqa
     )
 
     layout = column(Div(text=f"<strong>{title}</strong>"), p_run)
